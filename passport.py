@@ -33,7 +33,10 @@ def main():
             data = data )
     except OSError:
         return 0
-    
+
+    if response.status_code >= 400:
+        return 0
+
     schedule = response.json()['data']
     timelist = list()
     result = False
