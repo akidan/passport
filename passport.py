@@ -10,9 +10,11 @@ def main():
     json_str = os.popen("cat ~/.secrets/key.json").read()
     json_dict = json.loads(json_str)
     pcxSessionId = json_dict['passport']['pcxSessionId']
+    pcxSessionIdNagoya = json_dict['passport']['pcxSessionIdNagoya']
     htdocs = json_dict['passport']['htdocs']
 
     headers = {'Cookie': 'pcxSessionId='+pcxSessionId+';'}
+    headers_nagoya = {'Cookie': 'pcxSessionId='+pcxSessionIdNagoya+';'}
     #daoguan
     data_dg = {'addressName' : ''}
     #youji
@@ -37,7 +39,13 @@ def main():
     fp_ts_his     = htdocs+'_teshu_history.html'
     fp_ts_his_ori = htdocs+'_teshu_history_origin.html'
 
+    fp_ngy_log     = htdocs+'_nagoya_log.html'
+    fp_ngy_log_tmp = htdocs+'_nagoya_log_tmp.html'
+    fp_ngy_his     = htdocs+'_nagoya_history.html'
+    fp_ngy_his_ori = htdocs+'_nagoya_history_origin.html'
+
     try:
+        response_ngy =requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers_nagoya, data = data_dg)
         response_dg = requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_dg)
         response_yj = requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_yj)
         response_ts = requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_ts)
@@ -80,6 +88,18 @@ def main():
                     f_hp.write(f_ts_log.read()+'\n')
             else:
                 f_hp.write('<font color="red">\n东京到馆绿色通道特殊办理（16岁以下，60岁以上） 当前状态: 有空位</font>\n')
+                f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
+            for l in array[1]:
+                f_hp.write(l)
+
+        if response_ngy.status_code < 400:
+            array = get_time_list(response_ngy.json(),fp_ngy_log,fp_ngy_log_tmp,fp_ngy_his,fp_ngy_his_ori,"nagoya")
+            if array[0] == False:
+                f_hp.write('\n名古屋到馆办理 当前状态: 无空位\n')
+                with open(fp_ngy_log, 'r', encoding='UTF-8') as f_ngy_log:
+                    f_hp.write(f_ngy_log.read()+'\n')
+            else:
+                f_hp.write('<font color="red">\n名古屋到馆办理 当前状态: 有空位</font>\n')
                 f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
             for l in array[1]:
                 f_hp.write(l)
