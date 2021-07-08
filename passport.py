@@ -1,17 +1,18 @@
 # -*- coding: utf-8
-import os
-import urllib.request
-import requests
-import json
-import time
+import os, requests, json, time, datetime, smtplib, pymysql.cursors, random, hashlib
 from time import sleep
+from email.mime.text import MIMEText
+
+json_str = os.popen("cat ~/.secrets/key.json").read()
+const_param = json.loads(json_str)['passport']
+mysql_param = json.loads(json_str)['mysql']
+mail_param  = json.loads(json_str)['mail']
 
 def main():
-    json_str = os.popen("cat ~/.secrets/key.json").read()
-    json_dict = json.loads(json_str)
-    pcxSessionId = json_dict['passport']['pcxSessionId']
-    pcxSessionIdNagoya = json_dict['passport']['pcxSessionIdNagoya']
-    htdocs = json_dict['passport']['htdocs']
+    global const_param
+    pcxSessionId       = const_param['pcxSessionId']
+    pcxSessionIdNagoya = const_param['pcxSessionIdNagoya']
+    htdocs             = const_param['htdocs']
 
     headers = {'Cookie': 'pcxSessionId='+pcxSessionId+';'}
     headers_nagoya = {'Cookie': 'pcxSessionId='+pcxSessionIdNagoya+';'}
@@ -24,31 +25,15 @@ def main():
 
     fp_hp = htdocs+'.html'
 
-    fp_dg_log     = htdocs+'_daoguan_log.html'
-    fp_dg_log_tmp = htdocs+'_daoguan_log_tmp.html'
-    fp_dg_his     = htdocs+'_daoguan_history.html'
-    fp_dg_his_ori = htdocs+'_daoguan_history_origin.html'
-
-    fp_yj_log     = htdocs+'_youji_log.html'
-    fp_yj_log_tmp = htdocs+'_youji_log_tmp.html'
-    fp_yj_his     = htdocs+'_youji_history.html'
-    fp_yj_his_ori = htdocs+'_youji_history_origin.html'
-
-    fp_ts_log     = htdocs+'_teshu_log.html'
-    fp_ts_log_tmp = htdocs+'_teshu_log_tmp.html'
-    fp_ts_his     = htdocs+'_teshu_history.html'
-    fp_ts_his_ori = htdocs+'_teshu_history_origin.html'
-
-    fp_ngy_log     = htdocs+'_nagoya_log.html'
-    fp_ngy_log_tmp = htdocs+'_nagoya_log_tmp.html'
-    fp_ngy_his     = htdocs+'_nagoya_history.html'
-    fp_ngy_his_ori = htdocs+'_nagoya_history_origin.html'
+    reservation_types = ['daoguan','youji','teshu','nagoya']
+    reservation_names = ['东京到馆办理', '不见面办理（邮寄）', '东京到馆绿色通道特殊办理（16岁以下，60岁以上）', '名古屋到馆办理']
 
     try:
-        response_ngy =requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers_nagoya, data = data_dg)
-        response_dg = requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_dg)
-        response_yj = requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_yj)
-        response_ts = requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_ts)
+        responses = []
+        responses.append(requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_dg))
+        responses.append(requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_yj))
+        responses.append(requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers, data = data_ts))
+        responses.append(requests.post('https://ppt.mfa.gov.cn/appo/service/reservation/data/getReservationDateBean.json',headers=headers_nagoya, data = data_dg))
     except OSError:
         return 0
 
@@ -56,59 +41,22 @@ def main():
         f_hp.write('<h2>更新护照预约空位查询</h2>')
         f_hp.write('网页更新时间: '+time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())+'\n')
 
-        if response_dg.status_code < 400:
-            array = get_time_list(response_dg.json(),fp_dg_log,fp_dg_log_tmp,fp_dg_his,fp_dg_his_ori,"daoguan")
-            if array[0] == False:
-                f_hp.write('\n东京到馆办理 当前状态: 无空位\n')
-                with open(fp_dg_log, 'r', encoding='UTF-8') as f_dg_log:
-                    f_hp.write(f_dg_log.read()+'\n')
-            else:
-                f_hp.write('<font color="red">\n东京到馆办理 当前状态: 有空位</font>\n')
-                f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
-            for l in array[1]:
-                f_hp.write(l)
+        for i in range(len(reservation_types)):
+            process_response(i, f_hp, htdocs+'_'+reservation_types[i], responses[i], reservation_types[i], reservation_names[i])
 
-        if response_yj.status_code < 400:
-            array = get_time_list(response_yj.json(),fp_yj_log,fp_yj_log_tmp,fp_yj_his,fp_yj_his_ori,"youji")
-            if array[0] == False:
-                f_hp.write('\n不见面办理（邮寄） 当前状态: 无空位\n')
-                with open(fp_yj_log, 'r', encoding='UTF-8') as f_yj_log:
-                    f_hp.write(f_yj_log.read()+'\n')
-            else:
-                f_hp.write('<font color="red">\n不见面办理（邮寄） 当前状态: 有空位</font>\n')
-                f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
-            for l in array[1]:
-                f_hp.write(l)
-
-        if response_ts.status_code < 400:
-            array = get_time_list(response_ts.json(),fp_ts_log,fp_ts_log_tmp,fp_ts_his,fp_ts_his_ori,"teshu")
-            if array[0] == False:
-                f_hp.write('\n东京到馆绿色通道特殊办理（16岁以下，60岁以上） 当前状态: 无空位\n')
-                with open(fp_ts_log, 'r', encoding='UTF-8') as f_ts_log:
-                    f_hp.write(f_ts_log.read()+'\n')
-            else:
-                f_hp.write('<font color="red">\n东京到馆绿色通道特殊办理（16岁以下，60岁以上） 当前状态: 有空位</font>\n')
-                f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
-            for l in array[1]:
-                f_hp.write(l)
-
-        if response_ngy.status_code < 400:
-            array = get_time_list(response_ngy.json(),fp_ngy_log,fp_ngy_log_tmp,fp_ngy_his,fp_ngy_his_ori,"nagoya")
-            if array[0] == False:
-                f_hp.write('\n名古屋到馆办理 当前状态: 无空位\n')
-                with open(fp_ngy_log, 'r', encoding='UTF-8') as f_ngy_log:
-                    f_hp.write(f_ngy_log.read()+'\n')
-            else:
-                f_hp.write('<font color="red">\n名古屋到馆办理 当前状态: 有空位</font>\n')
-                f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
-            for l in array[1]:
-                f_hp.write(l)
-
-def append_to_head(fp, t1, t2, now):
-    with open(fp, 'r+', encoding='UTF-8') as f:
-        text = f.read()
-        f.seek(0, 0)
-        f.write(t1[:-1]+'-'+now[-9:]+' '+t2+'\n'+text)
+def process_response(i, f_hp, fp_self, response, reservation_type, reservation_name):
+    if response.status_code < 400:
+        array = get_time_list(response.json(),fp_self+'_log.html',fp_self+'_log_tmp.html',fp_self+'_history.html',fp_self+'_history_origin.html',reservation_type)
+        if array[0] == False:
+            f_hp.write('\n'+reservation_name+' 当前状态: 无空位\n')
+            with open(fp_self+'_log.html', 'r', encoding='UTF-8') as f_log:
+                f_hp.write(f_log.read()+'\n')
+        else:
+            f_hp.write('<font color="red">\n'+reservation_name+' 当前状态: 有空位</font>\n')
+            f_hp.write('<a href=https://ppt.mfa.gov.cn/appo/index.html>点此快速预约</a>\n')
+            send_mail(i+1, reservation_name)
+        for l in array[1]:
+            f_hp.write(l)
 
 def get_time_list(response_json,fp_log,fp_log_tmp,fp_his,fp_his_ori,reservation_type):
     all_count = 0
@@ -137,7 +85,7 @@ def get_time_list(response_json,fp_log,fp_log_tmp,fp_his,fp_his_ori,reservation_
                 all_count += day_per_count
                 timelist.append(s['date']+' <font color="red">可预约数: '+str(day_per_count)+'</font>\n')
                 if result == False:
-                    lasttime += '<a href=log/'+reservation_type+'>上次放号时间</a>: '+time.strftime("%Y-%m-%d %H:%M", time.localtime())
+                    lasttime += '<a href="../passport/'+reservation_type+'">上次放号时间</a>: '+time.strftime("%Y-%m-%d %H:%M", time.localtime())
                 result = True
 
     now_line1 = '['+time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())+']'
@@ -166,6 +114,104 @@ def get_time_list(response_json,fp_log,fp_log_tmp,fp_his,fp_his_ori,reservation_
 
     timelist.sort()
     return [result, timelist]
+
+def append_to_head(fp, t1, t2, now):
+    with open(fp, 'r+', encoding='UTF-8') as f:
+        text = f.read()
+        f.seek(0, 0)
+        f.write(t1[:-1]+'-'+now[-9:]+' '+t2+'\n'+text)
+
+def send_mail(mail_type, reservation_name):
+    #subscribe_types = [[1,3,5,7,9,11,13,15],
+    #                   [2,3,6,7,10,11,14,15],
+    #                   [4,5,6,7,12,13,14,15],
+    #                   [8,9,10,11,12,13,14,15]]
+    global const_param, mail_param
+    mail_types = 4
+    subscribe_type = []
+    i = 0
+    while i < pow(2,mail_types)-1:
+        i = i + pow(2,mail_type-1)
+        for j in range(pow(2,mail_type-1)):
+            subscribe_type.append(i)
+            i = i + 1
+
+    mail_dict = {}
+    mail_list = select_mail_from_user(mail_type, subscribe_type)
+    for mail in mail_list:
+        to_email = mail['email']
+
+        code_str = mail['email'] + str(int(round(time.time() * 1000)))
+        random_index = random.randrange(len(code_str))
+        mail_code_origin = code_str[0:random_index]+'#'+str(mail['user_id'])+'#'+code_str[random_index:len(code_str)]
+        mail_code = encode_decimal(int(hashlib.md5(mail_code_origin.encode()).hexdigest(),16))
+
+        mail_dict['user_id'] = mail['user_id']
+        mail_dict['email'] = mail['email']
+        mail_dict['mail_code'] = mail_code
+
+        message = "<table><tr><td style=\"border-collapse: collapse; font-size: 18px; font-weight: bold; line-height: 20px; padding-top: 50px; padding-bottom: 50px;\">" + reservation_name + " 放号</td></tr><tr><td style=\"border-collapse: collapse; font-size: 18px; line-height: 24px; padding-bottom: 10px;\">点此快速预约：<a href=\"https://ppt.mfa.gov.cn/appo/index.html\">https://ppt.mfa.gov.cn/appo/index.html</a></td></tr><tr><td align=\"left\" style=\"font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: rgb(102, 102, 102);\" class=\"\">请勿回复本电子邮件。我们无法回复您发送到本邮件地址的任何邮件。如有疑问，<a href=\"https://www.akidan.com/passport/\">请访问这里</a>获取更多信息。<a href=\"https://www.akidan.com/passport/subscribe?code="+mail_code+"\">退订</a></td></tr></table>"
+        msg = MIMEText(message, "html")
+        msg["Subject"] = "出现更新护照预约的空位！"
+        msg["To"] = mail['email']
+        msg["From"] = const_param['mailSender']
+
+        server = smtplib.SMTP(mail_param['domain'], int(mail_param['port']))
+        server.set_debuglevel(True)
+        server.starttls()
+        server.login(const_param['mailSender'], const_param['mailPassword'])
+        server.send_message(msg)
+        server.quit()
+    #if len(mail_dict) > 0:
+        insert_into_mail(mail_type, mail_dict)
+
+def encode_decimal(num):
+    global const_param
+    chars = const_param['mailCodeEncryptor']
+    base = len(chars)
+    string = ""
+    while True:
+        string = chars[num % base] + string
+        num = num // base
+        if num == 0:
+            break
+    return string
+
+def select_mail_from_user(mail_type, subscribe_type):
+    global const_param
+    db = db_connect()
+    cursor = db.cursor()
+    if mail_type == 2:
+        check_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    else:
+        check_date = (datetime.datetime.now() - datetime.timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
+    sql = (const_param['selectSql'] % (str(mail_type),check_date,str(tuple(subscribe_type))))
+    cursor.execute(sql)
+    db.close()
+    if cursor != None:
+        mail_list = cursor
+    cursor.close()
+    return mail_list
+
+def insert_into_mail(mail_type, mail_dict):
+    global const_param
+    db = db_connect()
+    cursor = db.cursor()
+    sql = (const_param['insertSql'] %(str(mail_dict['user_id']), str(mail_type), time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), mail_dict['mail_code']))
+    cursor.execute(sql)
+    db.commit()
+    db.close()
+    cursor.close()
+
+def db_connect():
+    global const_param, mysql_param
+    db = pymysql.connect(host = mysql_param['host'],
+                         port = int(mysql_param['port']),
+                         db = const_param['db'],
+                         user = mysql_param['user'],
+                         password = mysql_param['password'],
+                         cursorclass = pymysql.cursors.DictCursor)
+    return db
 
 if __name__ == "__main__":
     while (True):
